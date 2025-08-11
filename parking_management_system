@@ -1,0 +1,160 @@
+import mysql.connector
+from datetime import datetime
+import math
+
+# =========================
+# MySQL Connection
+# =========================
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="root"
+)
+cursor = db.cursor()
+
+# Create database if not exists
+cursor.execute("CREATE DATABASE IF NOT EXISTS parking_system")
+cursor.execute("USE parking_system")
+
+# Create table if not exists
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS vehicles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    owner_name VARCHAR(100),
+    vehicle_type VARCHAR(50),
+    plate_number VARCHAR(20),
+    entry_time DATETIME,
+    exit_time DATETIME,
+    status VARCHAR(20),
+    charges FLOAT
+)
+""")
+db.commit()
+
+# =========================
+# Prices per hour 
+# =========================
+vehicle_prices = {
+    1: ("Car", 150),
+    2: ("Bike", 80),
+    3: ("Truck", 200),
+    4: ("Bus", 250),
+    5: ("Van", 180),
+    6: ("Auto", 100)
+}
+
+# =========================
+# Functions
+# =========================
+
+def show_prices():
+    print("\n--- Parking Prices (per hour) ---")
+    for num, (vtype, price) in vehicle_prices.items():
+        print(f"{num}. {vtype} - ₹{price}")
+    print("0. Cancel")
+
+def enter_vehicle():
+    show_prices()
+    choice = int(input("Select vehicle type: "))
+    if choice == 0:
+        return
+    if choice not in vehicle_prices:
+        print("Invalid choice!")
+        return
+
+    vtype, price = vehicle_prices[choice]
+    print(f"You selected: {vtype} - ₹{price}/hour")
+
+    owner = input("Enter Owner Name: ")
+    plate = input("Enter Vehicle Plate Number: ")
+
+    entry_time = datetime.now()
+    cursor.execute("""
+        INSERT INTO vehicles (owner_name, vehicle_type, plate_number, entry_time, status)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (owner, vtype, plate, entry_time, "Parked"))
+    db.commit()
+    print(f"Vehicle {plate} parked at {entry_time}.")
+
+
+def exit_vehicle():
+    plate = input("Enter Vehicle Plate Number to Exit: ")
+    cursor.execute("SELECT id, vehicle_type, entry_time FROM vehicles WHERE plate_number=%s AND status='Parked'", (plate,))
+    result = cursor.fetchone()
+
+    if not result:
+        print("Vehicle not found or already exited!")
+        return
+
+    vid, vtype, entry_time = result
+    exit_time = datetime.now()
+
+    # Calculate charges
+    hours = math.ceil((exit_time - entry_time).total_seconds() / 3600)
+    price_per_hour = next(price for name, price in vehicle_prices.values() if name == vtype)
+    total_charges = hours * price_per_hour
+
+    cursor.execute("""
+        UPDATE vehicles
+        SET exit_time=%s, status='Exited', charges=%s
+        WHERE id=%s
+    """, (exit_time, total_charges, vid))
+    db.commit()
+
+    print(f"Vehicle {plate} exited at {exit_time}. Total charges: ₹{total_charges}")
+
+
+def show_vehicles():
+    print("\n--- Show Vehicles ---")
+    print("1. All Vehicles")
+    print("2. Parked Vehicles")
+    print("3. Exited Vehicles")
+    choice = int(input("Enter choice: "))
+
+    if choice == 1:
+        cursor.execute("SELECT * FROM vehicles")
+    elif choice == 2:
+        cursor.execute("SELECT * FROM vehicles WHERE status='Parked'")
+    elif choice == 3:
+        cursor.execute("SELECT * FROM vehicles WHERE status='Exited'")
+    else:
+        print("Invalid choice!")
+        return
+
+    records = cursor.fetchall()
+    if not records:
+        print("No records found!")
+        return
+
+    print("\nID | Owner | Type | Plate | Entry Time | Exit Time | Status | Charges")
+    for row in records:
+        print(row)
+
+
+# =========================
+# Main Program Loop
+# =========================
+while True:
+    print("\n====== Parking Management System ======")
+    print("1. Enter New Vehicle")
+    print("2. Exit Vehicle")
+    print("3. Show Vehicles")
+    print("0. Exit Program")
+
+    try:
+        choice = int(input("Enter your choice: "))
+    except ValueError:
+        print("Invalid input! Enter numbers only.")
+        continue
+
+    if choice == 1:
+        enter_vehicle()
+    elif choice == 2:
+        exit_vehicle()
+    elif choice == 3:
+        show_vehicles()
+    elif choice == 0:
+        print("Exiting program. Goodbye!")
+        break
+    else:
+        print("Invalid choice! Try again.")
